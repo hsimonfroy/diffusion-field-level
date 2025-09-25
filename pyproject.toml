@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools >= 64.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fldiffus"
+version = "0.0.1"
+authors = [{name="Hugo Simon-Onfroy"}] # email=""
+description = "Benchmarking field-level cosmological inference from galaxy surveys."
+dependencies = ["tensorflow-probability",
+                "diffrax",]
+readme = "README.md"
+requires-python = ">=3.8"
+urls = {Repository="https://github.com/hsimonfroy/diffusion-field-level"} # Documentation=""
+
+[tool.setuptools]
+packages = ["fldiffus"]
