@@ -5,7 +5,7 @@ tfd = tfp.distributions
 tfb = tfp.bijectors
 
 
-def make_dist(alpha=1., beta=0., d=2, sigma0=1., probs=[0.5, 0.5]):
+def make_gaussian_mixture(alpha=1., beta=0., d=2, sigma0=1., probs=[0.5, 0.5]):
   """
   Returns a mixture of two d-dimensional Multivariate Gaussians.
 
@@ -23,4 +23,46 @@ def make_dist(alpha=1., beta=0., d=2, sigma0=1., probs=[0.5, 0.5]):
           loc=jnp.stack([-alpha * jnp.ones(d), alpha * jnp.ones(d)]),
           scale_diag=jnp.ones((2, d)) * ((alpha * sigma0)**2 + beta**2)**.5)
   )
+
+
+
+##### Optimal Transport #####
+def alpha_OT(t):
+    return t
+
+def beta_OT(t):
+    return 1 - t
+
+drift_OT = lambda t, y, args: y / t
+diffusion_OT = lambda t, y, args: (2 * (1 / t - 1))**.5 * jnp.ones_like(y)
+
+
+##### Variance Preserving #####
+g2min, g2max = 0.1, 20.
+def alpha_VP(t, g2min=g2min, g2max=g2max):
+    """https://huggingface.co/docs/diffusers/v0.13.0/en/api/schedulers/score_sde_vp"""
+    return jnp.exp((g2min * (t**2 - 1) - g2max * (1 - t)**2) / 4)
+
+def beta_VP(t, g2min=g2min, g2max=g2max):
+    alpha = alpha_VP(t, g2min, g2max)
+    return (1 - alpha**2)**.5
+
+drift_VP = lambda t, y, args: (t * g2min + (1-t) * g2max) / 2 * y
+diffusion_VP = lambda t, y, args: (t * g2min + (1-t) * g2max)**.5 * jnp.ones_like(y)
+
+
+##### Variance Exploding #####
+betamin, betamax = 0.01, 100.
+def alpha_VE(t):
+    return jnp.ones_like(t)
+
+def beta_VE(t, betamin=betamin, betamax=betamax):
+    """https://huggingface.co/docs/diffusers/v0.13.0/en/api/schedulers/score_sde_ve"""
+    return betamin**t * betamax**(1 - t)
+
+drift_VE = lambda t, y, args: jnp.zeros_like(y)
+diffusion_VE = lambda t, y, args: (2 * beta_VE(t)**2 * jnp.log(betamax / betamin))**.5 * jnp.ones_like(y)
+
+
+
 
