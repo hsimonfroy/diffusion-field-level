@@ -54,12 +54,13 @@ class StochInterp:
         self.eps = 0.
         # self.dt0 = 1e-2
         # self.eps = 1e-6
+
+        # Scores and Flows
         self.score_marg = lambda t, y: grad(self.marg(t).log_prob)(y)
         self.flow_marg = lambda t, y: self.drift(t, y, None) + self.diffusion(t, y, None)**2 / 2 * self.score_marg(t, y)
-        self.score_target = lambda t, y: grad(self.target.log_prob)(y)
-        self.flow_target = lambda t, y: self.drift(t, y, None) + self.diffusion(t, y, None)**2 / 2 * self.score_target(t, y)
+        self.score_target = grad(self.target.log_prob)
+        self.flow_target = lambda y: self.drift(1., y, None) + self.diffusion(1., y, None)**2 / 2 * self.score_target(y)
 
-        # Neural nets
         class FlowNN(ScoreNN):
             @nn.compact
             def __call__(selfnn, t, x):
@@ -73,7 +74,7 @@ class StochInterp:
                              hidden_dim=128)
         self.params = self.scorenn.init(jr.key(0), jnp.zeros(1), jnp.zeros(self.dim))
 
-        # vmaped methods
+        # Vmaped methods
         self.backward_sde = jit(vmap(self._backward_sde))
         self.backward_ode = jit(vmap(self._backward_ode, in_axes=(None, 0)))
         self.forward_sde = jit(vmap(self._forward_sde, in_axes=(None, 0, 0)))
@@ -236,10 +237,6 @@ class StochInterp:
         kde = gaussian_kde(samples.T)
         out = self.plot_pdf(kde.logpdf, *args, **kwargs)
         return out
-
-        
-
-
 
     def plot_margs(self):
         assert self.dim == 1, "Only implemented for dim=1"

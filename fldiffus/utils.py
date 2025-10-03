@@ -24,8 +24,8 @@ def integ_sde(seed, t0, t1, dt0, y0, drift, diffusion, snapshots, pid=True):
         brownian_motion = VirtualBrownianTree(t0, t1, tol=1e-4, shape=(dim,), key=seed, levy_area=SpaceTimeLevyArea)
         terms = MultiTerm(ODETerm(drift), ControlTerm(diffusion, brownian_motion))
         solver = ShARK() # NOTE diffrax >= 0.6.0
-        # controller = PIDController(rtol=1e-3, atol=1e-6, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*1500 evals
-        controller = PIDController(rtol=1e-2, atol=1e-4, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*250 evals
+        controller = PIDController(rtol=1e-3, atol=1e-6, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*1500 evals
+        # controller = PIDController(rtol=1e-2, atol=1e-4, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*250 evals
     else:
         from diffrax import WeaklyDiagonalControlTerm # NOTE diffrax <= 0.5.0
         brownian_motion = VirtualBrownianTree(t0, t1, tol=1e-4, shape=(dim,), key=seed)
@@ -82,7 +82,7 @@ class ScoreNN(nn.Module):
     @nn.compact
     def __call__(self, t, x):
         # Encoding time
-        freqs = jnp.pi * jnp.arange(1,100,10)
+        freqs = 2 * jnp.pi * jnp.linspace(1,100,10)
         t *= freqs
         t = jnp.concatenate([jnp.sin(t), jnp.cos(t)],axis=-1)
         # Building network
