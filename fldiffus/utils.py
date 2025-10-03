@@ -7,7 +7,7 @@ import flax.linen as nn
 import numpy as np
 
 
-def integ_sde(seed, t0, t1, dt0, y0, drift, diffusion, snapshots):
+def integ_sde(seed, t0, t1, dt0, y0, drift, diffusion, snapshots, pid=True):
     dim = y0.shape[-1]
     if snapshots is None: 
         saveat = SaveAt(t1=True)
@@ -16,21 +16,22 @@ def integ_sde(seed, t0, t1, dt0, y0, drift, diffusion, snapshots):
     else: 
         saveat = SaveAt(ts=jnp.asarray(snapshots))
 
-    # # See https://docs.kidger.site/diffrax/devdocs/srk_example/
-    # from lineax import DiagonalLinearOperator # NOTE diffrax >= 0.6.0
-    # from diffrax import ShARK, SpaceTimeLevyArea
-    # diffusion = lambda t, y, args: DiagonalLinearOperator(diffusion(t, y, args))
-    # brownian_motion = VirtualBrownianTree(t0, t1, tol=1e-3, shape=(dim,), key=seed, levy_area=SpaceTimeLevyArea)
-    # terms = MultiTerm(ODETerm(drift), ControlTerm(diffusion, brownian_motion))
-    # solver = ShARK() # NOTE diffrax >= 0.6.0
-    # # controller = PIDController(rtol=1e-3, atol=1e-6, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*1500 evals
-    # controller = PIDController(rtol=1e-2, atol=1e-4, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*250 evals
-
-    from diffrax import WeaklyDiagonalControlTerm # NOTE diffrax <= 0.5.0
-    brownian_motion = VirtualBrownianTree(t0, t1, tol=1e-3, shape=(dim,), key=seed)
-    terms = MultiTerm(ODETerm(drift), WeaklyDiagonalControlTerm(diffusion, brownian_motion))
-    solver = Euler()
-    controller = ConstantStepSize()
+    if pid:
+        # See https://docs.kidger.site/diffrax/devdocs/srk_example/
+        from lineax import DiagonalLinearOperator # NOTE diffrax >= 0.6.0
+        from diffrax import ShARK, SpaceTimeLevyArea
+        diffusion = lambda t, y, args: DiagonalLinearOperator(diffusion(t, y, args))
+        brownian_motion = VirtualBrownianTree(t0, t1, tol=1e-4, shape=(dim,), key=seed, levy_area=SpaceTimeLevyArea)
+        terms = MultiTerm(ODETerm(drift), ControlTerm(diffusion, brownian_motion))
+        solver = ShARK() # NOTE diffrax >= 0.6.0
+        # controller = PIDController(rtol=1e-3, atol=1e-6, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*1500 evals
+        controller = PIDController(rtol=1e-2, atol=1e-4, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*250 evals
+    else:
+        from diffrax import WeaklyDiagonalControlTerm # NOTE diffrax <= 0.5.0
+        brownian_motion = VirtualBrownianTree(t0, t1, tol=1e-4, shape=(dim,), key=seed)
+        terms = MultiTerm(ODETerm(drift), WeaklyDiagonalControlTerm(diffusion, brownian_motion))
+        solver = Euler()
+        controller = ConstantStepSize()
 
     sol = diffeqsolve(terms, solver, t0, t1, dt0=dt0, y0=y0, stepsize_controller=controller, saveat=saveat)
     return sol.ts, sol.ys

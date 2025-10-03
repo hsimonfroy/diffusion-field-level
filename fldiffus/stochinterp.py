@@ -10,6 +10,7 @@ from tensorflow_probability.substrates import jax as tfp
 tfd = tfp.distributions
 tfb = tfp.bijectors
 import flax.linen as nn
+from jax.scipy.stats import gaussian_kde
 
 from fldiffus.targets import (alpha_OT, beta_OT, alpha_VP, beta_VP, alpha_VE, beta_VE, 
                             drift_OT, diffusion_OT, drift_VP, diffusion_VP, drift_VE, diffusion_VE, 
@@ -22,7 +23,9 @@ from fldiffus.utils import hutchinson_divergence, integ_sde, integ_ode, ScoreNN
 class StochInterp:
     scheduling: str | tuple[Callable, Callable]
     dim: int
-    hutch_div: int
+    hutch_div: None | int
+    snapshots: None | int | jnp.ndarray 
+    pid: bool = True
 
     def __post_init__(self):
         # Path params
@@ -51,8 +54,9 @@ class StochInterp:
         self.eps = 0.
         # self.dt0 = 1e-2
         # self.eps = 1e-6
-        self.snapshots = 100 # None, int or array of times
-        self.score_target = lambda t, y: grad(self.marg(t).log_prob)(y)
+        self.score_marg = lambda t, y: grad(self.marg(t).log_prob)(y)
+        self.flow_marg = lambda t, y: self.drift(t, y, None) + self.diffusion(t, y, None)**2 / 2 * self.score_marg(t, y)
+        self.score_target = lambda t, y: grad(self.target.log_prob)(y)
         self.flow_target = lambda t, y: self.drift(t, y, None) + self.diffusion(t, y, None)**2 / 2 * self.score_target(t, y)
 
         # Neural nets
@@ -69,18 +73,26 @@ class StochInterp:
                              hidden_dim=128)
         self.params = self.scorenn.init(jr.key(0), jnp.zeros(1), jnp.zeros(self.dim))
 
-        
-        
+        # vmaped methods
+        self.backward_sde = jit(vmap(self._backward_sde))
+        self.backward_ode = jit(vmap(self._backward_ode, in_axes=(None, 0)))
+        self.forward_sde = jit(vmap(self._forward_sde, in_axes=(None, 0, 0)))
+        self.forward_ode = jit(vmap(self._forward_ode, in_axes=(None, 0)))
+
+        self.sample_sde = jit(vmap(self._sample_sde, in_axes=(None, 0)))
+        self.sample_ode = jit(vmap(self._sample_ode, in_axes=(None, 0)))
+        self.backward_logpdf = jit(vmap(self._backward_logpdf, in_axes=(None, 0)))
+        self.forward_logpdf = jit(vmap(self._forward_logpdf, in_axes=(None, 0)))
 
         # Plot params
         self.n_discr = 128
         self.xlim = (-3,3)
         if self.dim == 1:
-            self.xx = jnp.linspace(*self.xlim, self.n_discr)[:,None]
+            self.xx = np.linspace(*self.xlim, self.n_discr)[:,None]
         elif self.dim == 2:
-            xx = jnp.linspace(*self.xlim, self.n_discr)
-            self.xx, self.yy = jnp.meshgrid(xx, xx)
-            self.xy = jnp.stack([self.xx.flatten(), self.yy.flatten()], axis=1)
+            xx = np.linspace(*self.xlim, self.n_discr)
+            self.xx, self.yy = np.meshgrid(xx, xx)
+            self.xy = np.stack([self.xx.flatten(), self.yy.flatten()], axis=1)
 
 
     def noise(self, key, t, x1):
@@ -98,33 +110,32 @@ class StochInterp:
     def target(self):
         return self.marg(1.)
     
-
-
-    def backward_sde(self, seed, x1):
+    
+    def _backward_sde(self, seed, x1):
         t0, t1 = self.eps, 1 - self.eps
         back_drift = lambda t, y, args: -self.drift(1 - t, y, args)
         back_diffusion = lambda t, y, args: self.diffusion(1 - t, y, args)
 
-        ts, ys = integ_sde(seed, t0, t1, self.dt0, x1, back_drift, back_diffusion, snapshots=self.snapshots)
-        return ts[::-1], ys
+        ts, xs = integ_sde(seed, t0, t1, self.dt0, x1, back_drift, back_diffusion, snapshots=self.snapshots, pid=self.pid)
+        return ts[::-1], xs
 
-    def forward_sde(self, seed, x0, params=None):
+    def _forward_sde(self, params, seed, x0):
         t0, t1 = self.eps, 1 - self.eps
         if params is None:
-            score = self.score_target
+            score = self.score_marg
         else:
             score = lambda t, y: self.scorenn.apply(params, t, y)
         forw_drift = lambda t, y, args: self.drift(t, y, args) + self.diffusion(t, y, args)**2 * score(t, y)
 
-        ts, ys = integ_sde(seed, t0, t1, self.dt0, x0, forw_drift, self.diffusion, snapshots=self.snapshots)
-        return ts, ys
+        ts, xs = integ_sde(seed, t0, t1, self.dt0, x0, forw_drift, self.diffusion, snapshots=self.snapshots, pid=self.pid)
+        return ts, xs
 
 
 
     def logp_drift(self, params, t, y, args):
         x, logp = y
         if params is None:
-            flow = self.flow_target
+            flow = self.flow_marg
         else:
             flow = lambda t, x: self.flownn.apply(params, t, x)
 
@@ -139,17 +150,7 @@ class StochInterp:
             raise ValueError("hutch_div must be None or int")
         return dx, -div
 
-    def forward_ode(self, x0, params=None):
-        # Let us use the (forward) continuous change of variable formula
-        # log p_t(x(t)) = log p_0(x(0)) - \int_0^t div(vf(x(s), s)) ds
-        t0, t1 = self.eps, 1 - self.eps
-        y0 = (x0, self.base.log_prob(x0))
-
-        ts, ys = integ_ode(t0, t1, self.dt0, y0, partial(self.logp_drift, params), snapshots=self.snapshots)
-        xs, logps = ys
-        return ts, xs, logps[-1]
-
-    def backward_ode(self, x1, params=None):
+    def _backward_ode(self, params, x1):
         # Let us use the (backward) continuous change of variable formula
         # log p_t(x(t)) = log p_0(x(0)) + \int_t^0 div(vf(x(s), s)) ds
         t0, t1 = 1 - self.eps, self.eps
@@ -158,15 +159,39 @@ class StochInterp:
         ts, ys = integ_ode(t0, t1, -self.dt0, y0, partial(self.logp_drift, params), snapshots=self.snapshots)
         xs, logps = ys
         logps = self.base.log_prob(xs[-1]) - logps
-        return ts, xs, logps[-1]
+        return ts, xs, logps
+    
+    def _forward_ode(self, params, x0):
+        # Let us use the (forward) continuous change of variable formula
+        # log p_t(x(t)) = log p_0(x(0)) - \int_0^t div(vf(x(s), s)) ds
+        t0, t1 = self.eps, 1 - self.eps
+        y0 = (x0, self.base.log_prob(x0))
+
+        ts, ys = integ_ode(t0, t1, self.dt0, y0, partial(self.logp_drift, params), snapshots=self.snapshots)
+        xs, logps = ys
+        return ts, xs, logps
 
 
 
 
+    def _sample_sde(self, params, seed):
+        seed_x0, seed_sde = jr.split(seed)
+        x0 = self.base.sample(seed=seed_x0)
+        ts, xs = self._forward_sde(params=params, seed=seed_sde, x0=x0)
+        return xs[-1]
 
+    def _sample_ode(self, params, seed):
+        x0 = self.base.sample(seed=seed)
+        ts, xs, logps = self._forward_ode(params=params, x0=x0)
+        return xs[-1], logps[-1]
 
-
-
+    def _backward_logpdf(self, params, x1):
+        ts, xs, logps = self._backward_ode(params=params, x1=x1)
+        return logps[-1]
+    
+    def _forward_logpdf(self, params, x0):
+        ts, xs, logps = self._forward_ode(params=params, x0=x0)
+        return logps[-1]
 
 
 
@@ -179,14 +204,14 @@ class StochInterp:
     ############
     # Plotting #
     ############
-    def plot_prob(self, log_prob, *args, **kwargs):
+    def plot_pdf(self, logpdf, *args, **kwargs):
         if self.dim == 1:
-            prob = jnp.exp(vmap(log_prob)(self.xx))
+            prob = jnp.exp(vmap(logpdf)(self.xx))
             out = plt.plot(self.xx, prob, *args, **kwargs)
             plt.xlabel('x')
 
         elif self.dim == 2:
-            prob = jnp.exp(vmap(log_prob)(self.xy)).reshape(self.xx.shape)
+            prob = jnp.exp(vmap(logpdf)(self.xy)).reshape(self.xx.shape)
             out = plt.contour(self.xx, self.yy, prob, *args, **kwargs)
             plt.xlim(self.xlim), plt.ylim(self.xlim)
             plt.xlabel('x'), plt.ylabel('y')
@@ -207,11 +232,20 @@ class StochInterp:
             plt.gca().set_aspect(1.)
             return out
 
+    def plot_kde(self, samples, *args, **kwargs):
+        kde = gaussian_kde(samples.T)
+        out = self.plot_pdf(kde.logpdf, *args, **kwargs)
+        return out
+
+        
+
+
+
     def plot_margs(self):
         assert self.dim == 1, "Only implemented for dim=1"
-        tt, xx = jnp.linspace(0, 1, self.n_discr), jnp.linspace(*self.xlim, self.n_discr)
-        tt, xx = jnp.meshgrid(tt, xx)
-        tx = jnp.stack([tt.flatten(), xx.flatten()], axis=1)
+        tt, xx = np.linspace(0, 1, self.n_discr), np.linspace(*self.xlim, self.n_discr)
+        tt, xx = np.meshgrid(tt, xx)
+        tx = np.stack([tt.flatten(), xx.flatten()], axis=1)
 
         def prob_at_tx(tx):
             t, x = tx
@@ -220,4 +254,5 @@ class StochInterp:
         probas = vmap(prob_at_tx)(tx).reshape(self.n_discr, self.n_discr)
         plt.pcolormesh(tt, xx, probas)
         plt.xlabel('t'), plt.ylabel('x');
+
         
