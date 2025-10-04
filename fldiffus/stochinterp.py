@@ -12,7 +12,7 @@ tfb = tfp.bijectors
 import flax.linen as nn
 from jax.scipy.stats import gaussian_kde
 
-from fldiffus.targets import (alpha_OT, beta_OT, alpha_VP, beta_VP, alpha_VE, beta_VE, 
+from fldiffus.schedule import (alpha_OT, beta_OT, alpha_VP, beta_VP, alpha_VE, beta_VE, 
                             drift_OT, diffusion_OT, drift_VP, diffusion_VP, drift_VE, diffusion_VE, 
                             make_gaussian_mixture)
 from fldiffus.utils import hutchinson_divergence, integ_sde, integ_ode, VelFieldNN
