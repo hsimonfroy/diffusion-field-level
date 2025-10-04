@@ -227,7 +227,7 @@ class StochInterp:
 
         elif self.dim == 2:
             out = plt.scatter(samples[...,0], samples[...,1], marker='+', 
-                        *args, **{'alpha':0.1} | kwargs)
+                        *args, **{'alpha':0.05} | kwargs)
             plt.xlim(self.xlim), plt.ylim(self.xlim)
             plt.xlabel('x'), plt.ylabel('y')
             plt.gca().set_aspect(1.)

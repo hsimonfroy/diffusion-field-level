@@ -20,9 +20,9 @@ def integ_sde(seed, t0, t1, dt0, y0, drift, diffusion, snapshots, pid=True):
         # See https://docs.kidger.site/diffrax/devdocs/srk_example/
         from lineax import DiagonalLinearOperator # NOTE diffrax >= 0.6.0
         from diffrax import ShARK, SpaceTimeLevyArea
-        diffusion = lambda t, y, args: DiagonalLinearOperator(diffusion(t, y, args))
+        diffus = lambda t, y, args: DiagonalLinearOperator(diffusion(t, y, args))
         brownian_motion = VirtualBrownianTree(t0, t1, tol=1e-4, shape=(dim,), key=seed, levy_area=SpaceTimeLevyArea)
-        terms = MultiTerm(ODETerm(drift), ControlTerm(diffusion, brownian_motion))
+        terms = MultiTerm(ODETerm(drift), ControlTerm(diffus, brownian_motion))
         solver = ShARK() # NOTE diffrax >= 0.6.0
         controller = PIDController(rtol=1e-3, atol=1e-6, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*1500 evals
         # controller = PIDController(rtol=1e-2, atol=1e-4, pcoeff=0.1, icoeff=0.3, dcoeff=0.) # ~2*250 evals
@@ -34,6 +34,7 @@ def integ_sde(seed, t0, t1, dt0, y0, drift, diffusion, snapshots, pid=True):
         controller = ConstantStepSize()
 
     sol = diffeqsolve(terms, solver, t0, t1, dt0=dt0, y0=y0, stepsize_controller=controller, saveat=saveat)
+    # debug.print("n_steps: {n}", n=sol.stats['num_steps'])
     return sol.ts, sol.ys
 
 
@@ -48,7 +49,6 @@ def integ_ode(t0, t1, dt0, y0, drift, snapshots):
 
     # solver = Euler()
     # controller = ConstantStepSize()
-
     solver = Tsit5()
     controller = PIDController(rtol=1e-3, atol=1e-6, pcoeff=0., icoeff=1., dcoeff=0.)
 
@@ -58,20 +58,12 @@ def integ_ode(t0, t1, dt0, y0, drift, snapshots):
 
 
 
-
 def hutchinson_divergence(seed, vf, x):
     def one_probe(seed):
         r = jr.rademacher(seed, x.shape, dtype=float) # or normal(k, x.shape)
         _, jvp_out = jvp(vf, (x,), (r,))
         return jnp.dot(r, jvp_out)
     return vmap(one_probe)(seed).mean()
-
-
-
-
-
-
-
 
 
 
