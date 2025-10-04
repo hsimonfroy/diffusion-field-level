@@ -33,7 +33,9 @@ def integ_sde(seed, t0, t1, dt0, y0, drift, diffusion, snapshots, pid=True):
         solver = Euler()
         controller = ConstantStepSize()
 
-    sol = diffeqsolve(terms, solver, t0, t1, dt0=dt0, y0=y0, stepsize_controller=controller, saveat=saveat)
+    sol = diffeqsolve(terms, solver, t0, t1, dt0=dt0, y0=y0, stepsize_controller=controller, saveat=saveat,
+                    #   max_steps=int(1e5),
+                      )
     # debug.print("n_steps: {n}", n=sol.stats['num_steps'])
     return sol.ts, sol.ys
 
@@ -67,7 +69,7 @@ def hutchinson_divergence(seed, vf, x):
 
 
 
-class ScoreNN(nn.Module):
+class VelFieldNN(nn.Module):
     out_dim: int
     hidden_dim: int
 
@@ -79,7 +81,6 @@ class ScoreNN(nn.Module):
         t = jnp.concatenate([jnp.sin(t), jnp.cos(t)],axis=-1)
         # Building network
         act_fn = nn.silu
-        xin = x
         x = jnp.concatenate([t, x])
         x = nn.Dense(features=self.hidden_dim)(x)
         x = act_fn(x)
@@ -88,4 +89,4 @@ class ScoreNN(nn.Module):
         x = nn.Dense(features=self.hidden_dim)(x)
         x = act_fn(x)
         x = nn.Dense(features=self.out_dim)(x)
-        return x - xin
+        return x

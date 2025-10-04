@@ -15,7 +15,7 @@ from jax.scipy.stats import gaussian_kde
 from fldiffus.targets import (alpha_OT, beta_OT, alpha_VP, beta_VP, alpha_VE, beta_VE, 
                             drift_OT, diffusion_OT, drift_VP, diffusion_VP, drift_VE, diffusion_VE, 
                             make_gaussian_mixture)
-from fldiffus.utils import hutchinson_divergence, integ_sde, integ_ode, ScoreNN
+from fldiffus.utils import hutchinson_divergence, integ_sde, integ_ode, VelFieldNN
 
 
 
@@ -51,15 +51,22 @@ class StochInterp:
 
         # Integration params
         self.dt0 = 3e-4
-        self.eps = 0.
         # self.dt0 = 1e-2
-        # self.eps = 1e-6
+        # self.eps = 0.
+        self.eps = 1e-6
 
         # Scores and Flows
         self.score_marg = lambda t, y: grad(self.marg(t).log_prob)(y)
         self.flow_marg = lambda t, y: self.drift(t, y, None) + self.diffusion(t, y, None)**2 / 2 * self.score_marg(t, y)
         self.score_target = grad(self.target.log_prob)
         self.flow_target = lambda y: self.drift(1., y, None) + self.diffusion(1., y, None)**2 / 2 * self.score_target(y)
+
+        class ScoreNN(VelFieldNN):
+            @nn.compact
+            def __call__(selfnn, t, x):
+                # vel = VelFieldNN(self.a, self.b, ...)(t, x) # NOTE: Will not have the same params structure
+                vel = VelFieldNN.__call__(selfnn, t, x)
+                return vel - x / (self.alpha(t)**2 + self.beta(t)**2) # NOTE: add marginal score assuming standard Gaussian target
 
         class FlowNN(ScoreNN):
             @nn.compact
@@ -73,6 +80,7 @@ class StochInterp:
         self.flownn = FlowNN(out_dim=self.dim, 
                              hidden_dim=128)
         self.params = self.scorenn.init(jr.key(0), jnp.zeros(1), jnp.zeros(self.dim))
+        self.params = tree.map(lambda x: x.astype(float), self.params) # XXX: Torr-penn does not provide f64 when needed
 
         # Vmaped methods
         self.backward_sde = jit(vmap(self._backward_sde))
