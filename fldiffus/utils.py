@@ -55,7 +55,9 @@ def integ_ode(t0, t1, dt0, y0, drift, snapshots):
     controller = PIDController(rtol=1e-3, atol=1e-6, pcoeff=0., icoeff=1., dcoeff=0.)
 
     terms = ODETerm(drift)
-    sol = diffeqsolve(terms, solver, t0, t1, dt0=dt0, y0=y0, stepsize_controller=controller, saveat=saveat)
+    sol = diffeqsolve(terms, solver, t0, t1, dt0=dt0, y0=y0, stepsize_controller=controller, saveat=saveat,
+                    #   max_steps=int(1e5),
+                      )
     return sol.ts, sol.ys
 
 

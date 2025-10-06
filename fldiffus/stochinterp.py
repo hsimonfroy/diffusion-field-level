@@ -81,7 +81,8 @@ class StochInterp:
                              hidden_dim=128)
         self.params = self.scorenn.init(jr.key(0), jnp.zeros(1), jnp.zeros(self.dim))
         self.params = tree.map(lambda x: x.astype(float), self.params) # XXX: Torr-penn does not provide f64 when needed
-
+        # self.params = tree.map(lambda x: jnp.zeros_like(x), self.params)
+        
         # Vmaped methods
         self.backward_sde = jit(vmap(self._backward_sde))
         self.backward_ode = jit(vmap(self._backward_ode, in_axes=(None, 0)))
