@@ -5,7 +5,7 @@ tfd = tfp.distributions
 tfb = tfp.bijectors
 
 
-def make_gaussian_mixture(alpha=1., beta=0., d=2, sigma0=1., probs=[0.5, 0.5]):
+def make_gaussian_mixture(alpha=1., beta=0., d=2, sigma1=1., probs=[0.5, 0.5]):
   """
   Returns a mixture of two d-dimensional Multivariate Gaussians.
 
@@ -21,7 +21,7 @@ def make_gaussian_mixture(alpha=1., beta=0., d=2, sigma0=1., probs=[0.5, 0.5]):
       components_distribution=tfd.MultivariateNormalDiag(
         #   loc=jnp.stack([-alpha * jnp.ones(d), alpha * jnp.ones(d)]),
           loc=jnp.stack([-alpha * jnp.ones(d), alpha * jnp.ones(d)]),
-          scale_diag=jnp.ones((2, d)) * ((alpha * sigma0)**2 + beta**2)**.5)
+          scale_diag=jnp.ones((2, d)) * ((alpha * sigma1)**2 + beta**2)**.5)
   )
 
 
@@ -64,5 +64,14 @@ drift_VE = lambda t, y, args: jnp.zeros_like(y)
 diffusion_VE = lambda t, y, args: (2 * beta_VE(t)**2 * jnp.log(betamax / betamin))**.5 * jnp.ones_like(y)
 
 
+##### Pinned Brownian #####
+betamax = 1.
+def alpha_PB(t):
+    return t
 
+def beta_PB(t, betamax=betamax):
+    return 2 * betamax * (alpha_PB(t) * (1 - alpha_PB(t)))**.5
+
+drift_PB = lambda t, y, args: y / t
+diffusion_PB = lambda t, y, args: 2 * betamax * jnp.ones_like(y)
 

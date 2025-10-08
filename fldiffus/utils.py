@@ -40,7 +40,7 @@ def integ_sde(seed, t0, t1, dt0, y0, drift, diffusion, snapshots, pid=True):
     return sol.ts, sol.ys
 
 
-def integ_ode(t0, t1, dt0, y0, drift, snapshots):
+def integ_ode(t0, t1, dt0, y0, drift, snapshots, pid=True):
 
     if snapshots is None:
         saveat = SaveAt(t1=True)
@@ -49,10 +49,12 @@ def integ_ode(t0, t1, dt0, y0, drift, snapshots):
     else:
         saveat = SaveAt(ts=jnp.asarray(snapshots))
 
-    # solver = Euler()
-    # controller = ConstantStepSize()
-    solver = Tsit5()
-    controller = PIDController(rtol=1e-3, atol=1e-6, pcoeff=0., icoeff=1., dcoeff=0.)
+    if pid:
+        solver = Tsit5()
+        controller = PIDController(rtol=1e-3, atol=1e-6, pcoeff=0., icoeff=1., dcoeff=0.)
+    else:
+        solver = Euler()
+        controller = ConstantStepSize()
 
     terms = ODETerm(drift)
     sol = diffeqsolve(terms, solver, t0, t1, dt0=dt0, y0=y0, stepsize_controller=controller, saveat=saveat,

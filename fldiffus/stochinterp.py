@@ -12,9 +12,11 @@ tfb = tfp.bijectors
 import flax.linen as nn
 from jax.scipy.stats import gaussian_kde
 
-from fldiffus.schedule import (alpha_OT, beta_OT, alpha_VP, beta_VP, alpha_VE, beta_VE, 
-                            drift_OT, diffusion_OT, drift_VP, diffusion_VP, drift_VE, diffusion_VE, 
-                            make_gaussian_mixture)
+from fldiffus.schedule import (alpha_OT, beta_OT, drift_OT, diffusion_OT, 
+                               alpha_VP, beta_VP, drift_VP, diffusion_VP,
+                               alpha_VE, beta_VE, drift_VE, diffusion_VE,
+                               alpha_PB, beta_PB, drift_PB, diffusion_PB,
+                               make_gaussian_mixture)
 from fldiffus.utils import hutchinson_divergence, integ_sde, integ_ode, VelFieldNN
 
 
@@ -40,6 +42,10 @@ class StochInterp:
         elif self.scheduling == 'VE':
             self.alpha, self.beta = alpha_VE, beta_VE
             self.drift, self.diffusion = drift_VE, diffusion_VE
+
+        elif self.scheduling == 'PB':
+            self.alpha, self.beta = alpha_PB, beta_PB
+            self.drift, self.diffusion = drift_PB, diffusion_PB
 
         elif isinstance(self.scheduling, tuple):
             self.alpha, self.beta = self.scheduling
@@ -108,9 +114,9 @@ class StochInterp:
     def noise(self, key, t, x1):
         return self.alpha(t) * x1 + self.beta(t) * jr.normal(key, jnp.shape(x1))
     
-    def marg(self, t=1., sigma0=.5, probs=[0.4, 0.6]):
+    def marg(self, t=1., sigma1=.5, probs=[0.4, 0.6]):
         return make_gaussian_mixture(alpha=self.alpha(t), beta=self.beta(t),
-                                        d=self.dim, sigma0=sigma0, probs=probs)
+                                        d=self.dim, sigma1=sigma1, probs=probs)
     
     @property
     def base(self):
@@ -126,7 +132,8 @@ class StochInterp:
         back_drift = lambda t, y, args: -self.drift(1 - t, y, args)
         back_diffusion = lambda t, y, args: self.diffusion(1 - t, y, args)
 
-        ts, xs = integ_sde(seed, t0, t1, self.dt0, x1, back_drift, back_diffusion, snapshots=self.snapshots, pid=self.pid)
+        ts, xs = integ_sde(seed, t0, t1, self.dt0, x1, back_drift, back_diffusion, 
+                            snapshots=self.snapshots, pid=self.pid)
         return ts[::-1], xs
 
     def _forward_sde(self, params, seed, x0):
@@ -137,7 +144,8 @@ class StochInterp:
             score = lambda t, y: self.scorenn.apply(params, t, y)
         forw_drift = lambda t, y, args: self.drift(t, y, args) + self.diffusion(t, y, args)**2 * score(t, y)
 
-        ts, xs = integ_sde(seed, t0, t1, self.dt0, x0, forw_drift, self.diffusion, snapshots=self.snapshots, pid=self.pid)
+        ts, xs = integ_sde(seed, t0, t1, self.dt0, x0, forw_drift, self.diffusion, 
+                            snapshots=self.snapshots, pid=self.pid)
         return ts, xs
 
 
@@ -166,7 +174,8 @@ class StochInterp:
         t0, t1 = 1 - self.eps, self.eps
         y0 = (x1, 0.0)
 
-        ts, ys = integ_ode(t0, t1, -self.dt0, y0, partial(self.logp_drift, params), snapshots=self.snapshots)
+        ts, ys = integ_ode(t0, t1, -self.dt0, y0, partial(self.logp_drift, params), 
+                           snapshots=self.snapshots, pid=self.pid)
         xs, logps = ys
         logps = self.base.log_prob(xs[-1]) - logps
         return ts, xs, logps
@@ -177,7 +186,8 @@ class StochInterp:
         t0, t1 = self.eps, 1 - self.eps
         y0 = (x0, self.base.log_prob(x0))
 
-        ts, ys = integ_ode(t0, t1, self.dt0, y0, partial(self.logp_drift, params), snapshots=self.snapshots)
+        ts, ys = integ_ode(t0, t1, self.dt0, y0, partial(self.logp_drift, params), 
+                           snapshots=self.snapshots, pid=self.pid)
         xs, logps = ys
         return ts, xs, logps
 
