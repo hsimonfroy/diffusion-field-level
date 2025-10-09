@@ -70,7 +70,8 @@ def alpha_PB(t):
     return t
 
 def beta_PB(t, betamax=betamax):
-    return 2 * betamax * (alpha_PB(t) * (1 - alpha_PB(t)))**.5
+    alpha = alpha_PB(t)
+    return 2 * betamax * (alpha * (1 - alpha))**.5
 
 drift_PB = lambda t, y, args: y / t
 diffusion_PB = lambda t, y, args: 2 * betamax * jnp.ones_like(y)
