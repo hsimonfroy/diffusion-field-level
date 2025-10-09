@@ -228,13 +228,11 @@ class StochInterp:
         if self.dim == 1:
             prob = jnp.exp(vmap(logpdf)(self.xx))
             out = plt.plot(self.xx, prob, *args, **kwargs)
-            plt.xlabel('x')
 
         elif self.dim == 2:
             prob = jnp.exp(vmap(logpdf)(self.xy)).reshape(self.xx.shape)
             out = plt.contour(self.xx, self.yy, prob, *args, **kwargs)
             plt.xlim(self.xlim), plt.ylim(self.xlim)
-            plt.xlabel('x'), plt.ylabel('y')
             plt.gca().set_aspect(1.)
             return out
 
@@ -242,13 +240,11 @@ class StochInterp:
         if self.dim == 1:
             out = plt.hist(samples[...,0], bins=50, range=self.xlim, density=True, 
                      *args,  **{'alpha':0.5} | kwargs)
-            plt.xlabel('$x$')
 
         elif self.dim == 2:
             out = plt.scatter(samples[...,0], samples[...,1], marker='+', 
                         *args, **{'alpha':0.05} | kwargs)
             plt.xlim(self.xlim), plt.ylim(self.xlim)
-            plt.xlabel('x'), plt.ylabel('y')
             plt.gca().set_aspect(1.)
             return out
 
