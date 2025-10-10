@@ -1,5 +1,5 @@
 # Diffusion for Field-Level Inference
-<a href="https://colab.research.google.com/github/hsimonfroy/diffusion-field-level/blob/main/tests/BoltzmanSampling.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+<a href="https://colab.research.google.com/github/hsimonfroy/diffusion-field-level/blob/main/tests/StochInterp.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 
 ## Overview
 Diffusion Sampling for Cosmological Field-Level Inference
